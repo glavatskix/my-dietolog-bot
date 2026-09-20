@@ -124,6 +124,19 @@ def call_gemini_with_image(history, caption, image_bytes, mime_type):
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
+GREETING_MESSAGE = (
+    "Привет! Я твой личный помощник по питанию 🍎\n\n"
+    "Вот чем могу помочь:\n"
+    "— Присылай фото еды — прикину примерные калории и БЖУ, и скажу, насколько это "
+    "вписывается в твою цель\n"
+    "— Отвечу на вопросы про питание, помогу с идеями для рациона\n"
+    "— Всё это без строгих запретов и стыда за еду — просто баланс и здравый смысл\n\n"
+    "Для начала расскажи: какая у тебя сейчас цель — снизить вес, удержать текущий, "
+    "набрать, или просто питаться получше? И к какому примерно сроку/темпу хотелось бы "
+    "прийти, если это важно?"
+)
+
+
 def handle_update(update):
     message = update.get("message")
     if not message:
@@ -131,6 +144,16 @@ def handle_update(update):
 
     chat_id = message["chat"]["id"]
     history = load_history(chat_id)
+
+    # Первое знакомство — отдельное приветствие с вопросом про цели, а не обычный
+    # ответ Gemini. Срабатывает и на команду /start (обычная кнопка "Start" в Telegram),
+    # и на самое первое сообщение в чате, если по какой-то причине /start не было.
+    user_text = message.get("text", "")
+    if user_text.strip() == "/start" or not history:
+        telegram_send_message(chat_id, GREETING_MESSAGE)
+        history.append({"role": "model", "text": GREETING_MESSAGE})
+        save_history(chat_id, history)
+        return
 
     try:
         if "photo" in message:
@@ -141,7 +164,6 @@ def handle_update(update):
             reply = call_gemini_with_image(history, caption, image_bytes, "image/jpeg")
             history.append({"role": "user", "text": f"[прислал(а) фото еды] {caption}".strip()})
         elif "text" in message:
-            user_text = message["text"]
             history_with_new = history + [{"role": "user", "text": user_text}]
             reply = call_gemini_text(history_with_new)
             history.append({"role": "user", "text": user_text})
